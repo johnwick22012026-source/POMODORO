@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import type { KeyboardEvent } from 'react'
 import type { SessionType } from '../types'
 
 const sessionOptions: { label: string; description: string; type: SessionType }[] = [
@@ -11,8 +12,12 @@ const sessionOrder: SessionType[] = ['focus', 'short-break', 'long-break']
 
 const hasWindow = typeof window !== 'undefined'
 
-export default function SessionTabs() {
-  const [activeSession, setActiveSession] = useState<SessionType>('focus')
+type SessionTabsProps = {
+  activeSession: SessionType
+  onSessionChange: (session: SessionType) => void
+}
+
+export default function SessionTabs({ activeSession, onSessionChange }: SessionTabsProps) {
   const sessions = useMemo(() => sessionOptions, [])
   const [isReducedMotion, setReducedMotionPreferences] = useState(false)
 
@@ -30,30 +35,30 @@ export default function SessionTabs() {
 
   const focusSession = useCallback(
     (session: SessionType) => {
-      setActiveSession(session)
+      onSessionChange(session)
     },
-    [setActiveSession]
+    [onSessionChange]
   )
 
   const handleKeyDown = useCallback(
-    (event: React.KeyboardEvent<HTMLButtonElement>) => {
+    (event: KeyboardEvent<HTMLButtonElement>) => {
       if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
         event.preventDefault()
         const currentIndex = sessionOrder.indexOf(activeSession)
         const direction = event.key === 'ArrowRight' ? 1 : -1
         const nextIndex = (currentIndex + direction + sessionOrder.length) % sessionOrder.length
-        setActiveSession(sessionOrder[nextIndex])
+        onSessionChange(sessionOrder[nextIndex])
       }
       if (event.key === 'Home') {
         event.preventDefault()
-        setActiveSession(sessionOrder[0])
+        onSessionChange(sessionOrder[0])
       }
       if (event.key === 'End') {
         event.preventDefault()
-        setActiveSession(sessionOrder[sessionOrder.length - 1])
+        onSessionChange(sessionOrder[sessionOrder.length - 1])
       }
     },
-    [activeSession]
+    [activeSession, onSessionChange]
   )
 
   return (
