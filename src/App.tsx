@@ -1,11 +1,13 @@
-import { useLayoutEffect } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import DashboardShell from './components/DashboardShell'
 import Header from './components/Header'
 import SessionTabs from './components/SessionTabs'
 import TimerDisplay from './components/TimerDisplay'
 import { usePersistedState } from './hooks/usePersistedState'
+import type { SessionType } from './types'
 
 type ThemeMode = 'light' | 'dark'
+type TimerState = 'idle' | 'running' | 'paused'
 
 const focusPresets = ['Deep Work', 'Write', 'Plan']
 
@@ -29,18 +31,113 @@ const history = [
 
 const themeStorageKey = 'pomodoro-theme'
 
+const sessionDurations: Record<SessionType, number> = {
+  focus: 25 * 60,
+  'short-break': 5 * 60,
+  'long-break': 15 * 60
+}
+
+const sessionLabels: Record<SessionType, string> = {
+  focus: 'Focus',
+  'short-break': 'Short Break',
+  'long-break': 'Long Break'
+}
+
+const sessionOrder: SessionType[] = ['focus', 'short-break', 'long-break']
+
 export default function App() {
   const [theme, setTheme] = usePersistedState<ThemeMode>(themeStorageKey, 'dark')
+  const [mode, setMode] = useState<SessionType>('focus')
+  const [timerState, setTimerState] = useState<TimerState>('idle')
+  const [phaseStart, setPhaseStart] = useState<number | null>(null)
+  const [accumulated, setAccumulated] = useState(0)
+  const [now, setNow] = useState(Date.now())
+
   const isDark = theme === 'dark'
 
-  useLayoutEffect(() => {
+  useEffect(() => {
     if (typeof document === 'undefined') return
     document.documentElement.classList.toggle('dark', isDark)
   }, [isDark])
 
+  useEffect(() => {
+    if (timerState !== 'running') {
+      return
+    }
+
+    const interval = setInterval(() => {
+      setNow(Date.now())
+    }, 250)
+
+    return () => clearInterval(interval)
+  }, [timerState])
+
   const toggleTheme = () => {
     setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'))
   }
+
+  const resetTimer = useCallback(() => {
+    setTimerState('idle')
+    setAccumulated(0)
+    setPhaseStart(null)
+    setNow(Date.now())
+  }, [])
+
+  const handleSessionChange = useCallback(
+    (newSession: SessionType) => {
+      setMode(newSession)
+      resetTimer()
+    },
+    [resetTimer]
+  )
+
+  const handleStartOrResume = useCallback(() => {
+    if (timerState === 'running') {
+      return
+    }
+
+    const startTime = Date.now()
+    setPhaseStart(startTime)
+    setTimerState('running')
+    setNow(startTime)
+  }, [timerState])
+
+  const handlePause = useCallback(() => {
+    if (timerState !== 'running' || phaseStart === null) {
+      return
+    }
+
+    const pauseTime = Date.now()
+    setAccumulated((prev) => prev + (pauseTime - phaseStart))
+    setPhaseStart(null)
+    setTimerState('paused')
+    setNow(pauseTime)
+  }, [phaseStart, timerState])
+
+  const handleReset = useCallback(() => {
+    resetTimer()
+  }, [resetTimer])
+
+  const handleSkip = useCallback(() => {
+    const currentIndex = sessionOrder.indexOf(mode)
+    const nextIndex = (currentIndex + 1) % sessionOrder.length
+    setMode(sessionOrder[nextIndex])
+    resetTimer()
+  }, [mode, resetTimer])
+
+  const durationSeconds = sessionDurations[mode]
+  const elapsedMilliseconds =
+    accumulated + (timerState === 'running' && phaseStart !== null ? now - phaseStart : 0)
+  const remainingSeconds = Math.max(0, Math.ceil((durationSeconds * 1000 - elapsedMilliseconds) / 1000))
+
+  useEffect(() => {
+    if (timerState === 'running' && remainingSeconds <= 0) {
+      setTimerState('idle')
+      setAccumulated(0)
+      setPhaseStart(null)
+      setNow(Date.now())
+    }
+  }, [remainingSeconds, timerState])
 
   const pageClass = isDark
     ? 'min-h-screen bg-slate-950/40 py-8 text-white'
@@ -91,13 +188,21 @@ export default function App() {
             <section
               className={`order-2 lg:order-2 lg:col-start-1 ${sectionClass} p-5 lg:p-6`}
             >
-              <SessionTabs />
+              <SessionTabs activeSession={mode} onSessionChange={handleSessionChange} />
             </section>
 
             <section
               className={`order-3 lg:order-3 lg:col-start-2 ${sectionClass} p-6 flex flex-col justify-center lg:min-h-[520px]`}
             >
-              <TimerDisplay />
+              <TimerDisplay
+                remainingSeconds={remainingSeconds}
+                timerState={timerState}
+                modeLabel={sessionLabels[mode]}
+                onStart={handleStartOrResume}
+                onPause={handlePause}
+                onReset={handleReset}
+                onSkip={handleSkip}
+              />
             </section>
 
             <section
